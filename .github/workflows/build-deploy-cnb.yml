@@ -1,0 +1,43 @@
+name: 'Build and Deploy to CNB Repository'
+
+on:
+  workflow_call:
+    inputs:
+      working-directory:
+        description: 'Working directory for the Maven project'
+        required: false
+        default: '.'
+      java-version:
+        description: 'Java version to use'
+        required: false
+        default: '25'
+      maven-options:
+        description: 'Additional Maven options'
+        required: false
+        default: ''
+      skip-tests:
+        description: 'Skip running tests'
+        required: false
+        default: 'true'
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        
+      - name: Build and Deploy to CNB
+        uses: ./.github/workflows/maven-build-deploy.yml
+        with:
+          working-directory: ${{ inputs.working-directory }}
+          java-version: ${{ inputs.java-version }}
+          maven-options: ${{ inputs.maven-options }}
+          skip-tests: ${{ inputs.skip-tests }}
+          server-id: 'lunarstra-quantum'
+          repository-url: 'https://maven.cnb.cool/lunarstra/Quantum/-/packages/'
+          profile-id: 'lunarstra-quantum'

@@ -1,0 +1,151 @@
+name: 'Maven Build and Deploy to Maven Repository'
+
+description: 'Builds a Maven project and deploys to Maven private repository'
+on:
+  workflow_call:
+    inputs:
+      java-version:
+        description: 'Java version to use'
+        required: false
+        default: '25'
+      distribution:
+        description: 'Java distribution to use'
+        required: false
+        default: 'temurin'
+      maven-options:
+        description: 'Additional Maven options'
+        required: false
+        default: ''
+      working-directory:
+        description: 'Working directory for the Maven project'
+        required: false
+        default: '.'
+      server-id:
+        description: 'Maven server ID for CNB repository'
+        required: false
+        default: 'lunarstra-quantum'
+      repository-url:
+        description: 'CNB repository URL'
+        required: false
+        default: 'https://maven.cnb.cool/lunarstra/Quantum/-/packages/'
+      profile-id:
+        description: 'Maven profile ID for CNB repository'
+        required: false
+        default: 'lunarstra-quantum'
+      skip-tests:
+        description: 'Skip running tests'
+        required: false
+        default: 'true'
+
+branding:
+  icon: 'package'
+  color: 'blue'
+
+inputs:
+  java-version:
+    description: 'Java version to use'
+    required: false
+    default: '25'
+  distribution:
+    description: 'Java distribution to use'
+    required: false
+    default: 'temurin'
+  maven-options:
+    description: 'Additional Maven options'
+    required: false
+    default: ''
+  working-directory:
+    description: 'Working directory for the Maven project'
+    required: false
+    default: '.'
+  server-id:
+    description: 'Maven server ID for CNB repository'
+    required: false
+    default: 'lunarstra-quantum'
+  repository-url:
+    description: 'CNB repository URL'
+    required: false
+    default: 'https://maven.cnb.cool/lunarstra/Quantum/-/packages/'
+  profile-id:
+    description: 'Maven profile ID for CNB repository'
+    required: false
+    default: 'lunarstra-quantum'
+  skip-tests:
+    description: 'Skip running tests'
+    required: false
+    default: 'true'
+
+outputs:
+  artifact-version:
+    description: 'Version of the deployed artifact'
+    value: ${{ steps.get-version.outputs.version }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Set up JDK ${{ inputs.java-version }}
+      uses: actions/setup-java@v4
+      with:
+        java-version: ${{ inputs.java-version }}
+        distribution: ${{ inputs.distribution }}
+
+    - name: Cache Maven dependencies
+      uses: actions/cache@v4
+      with:
+        path: ~/.m2
+        key: ${{ runner.os }}-m2-${{ hashFiles(format('{0}/**/pom.xml', inputs.working-directory)) }}
+        restore-keys: ${{ runner.os }}-m2
+
+    - name: Configure Maven settings
+      shell: bash
+      run: |
+        mkdir -p ~/.m2
+        cat > ~/.m2/settings.xml << EOF
+        <settings>
+          <servers>
+            <server>
+              <id>${{ inputs.server-id }}</id>
+              <username>cnb</username>
+              <password>${{ secrets.MAVEN_TOKEN }}</password>
+            </server>
+          </servers>
+          <profiles>
+            <profile>
+              <id>${{ inputs.profile-id }}</id>
+              <repositories>
+                <repository>
+                  <id>${{ inputs.server-id }}</id>
+                  <url>${{ inputs.repository-url }}</url>
+                </repository>
+              </repositories>
+              <activation>
+                <activeByDefault>true</activeByDefault>
+              </activation>
+            </profile>
+          </profiles>
+        </settings>
+        EOF
+
+    - name: Get project version
+      id: get-version
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        if [ -f "pom.xml" ]; then
+          VERSION=$(./mvnw help:evaluate -Dexpression=project.version -q -DforceStdout)
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+        else
+          echo "No pom.xml found in working directory"
+          exit 1
+        fi
+
+    - name: Make mvnw executable
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: chmod +x ./mvnw || true
+
+    - name: Build and deploy to CNB
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        ./mvnw clean deploy ${{ inputs.maven-options }} -Dmaven.test.skip=${{ inputs.skip-tests }}

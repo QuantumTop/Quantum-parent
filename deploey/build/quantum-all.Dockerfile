@@ -1,5 +1,5 @@
 # 使用亚马逊 OpenJDK 镜像作为基础镜像
-FROM amazoncorretto:25-alpine
+FROM eclipse-temurin:25-jre-alpine-3.22
 
 # 设置维护者信息
 LABEL maintainer="Quantum Team"
