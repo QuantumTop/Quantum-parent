@@ -33,6 +33,21 @@ on:
         required: false
         default: 'cnb'
         type: string
+      server-id:
+        description: 'Maven server ID for repository'
+        required: false
+        default: 'lunarstra-quantum'
+        type: string
+      repository-url:
+        description: 'Repository URL'
+        required: false
+        default: 'https://maven.cnb.cool/lunarstra/Quantum/-/packages/'
+        type: string
+      profile-id:
+        description: 'Maven profile ID for repository'
+        required: false
+        default: 'lunarstra-quantum'
+        type: string
   workflow_call:
     inputs:
       java-version:
@@ -56,17 +71,17 @@ on:
         default: '.'
         type: string
       server-id:
-        description: 'Maven server ID for CNB repository'
+        description: 'Maven server ID for repository'
         required: false
         default: 'lunarstra-quantum'
         type: string
       repository-url:
-        description: 'CNB repository URL'
+        description: 'Repository URL'
         required: false
         default: 'https://maven.cnb.cool/lunarstra/Quantum/-/packages/'
         type: string
       profile-id:
-        description: 'Maven profile ID for CNB repository'
+        description: 'Maven profile ID for repository'
         required: false
         default: 'lunarstra-quantum'
         type: string
@@ -104,75 +119,124 @@ jobs:
         with:
           java-version: ${{ inputs.java-version }}
           distribution: ${{ inputs.distribution }}
-
-      - name: Cache Maven dependencies
-        uses: actions/cache@v4
-        with:
-          path: ~/.m2/repository
-          key: ${{ runner.os }}-maven-${{ hashFiles(format('{0}/**/pom.xml', inputs.working-directory)) }}
-          restore-keys: |
-            ${{ runner.os }}-maven-
+          cache: 'maven'
 
       - name: Configure Maven settings
         run: |
           mkdir -p ~/.m2
-          cat > ~/.m2/settings.xml << EOF
-          <settings>
+          cat > ~/.m2/settings.xml << 'EOF'
+          <settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"
+                    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                    xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.0.0
+                                        http://maven.apache.org/xsd/settings-1.0.0.xsd">
             <servers>
               <server>
-                <id>${{ inputs.server-id }}</id>
-                <username>${{ inputs.maven-username }}</username>
-                <password>${{ secrets.MAVEN_TOKEN }}</password>
+                <id>${SERVER_ID}</id>
+                <username>${MAVEN_USERNAME}</username>
+                <password>${MAVEN_TOKEN}</password>
               </server>
             </servers>
             <profiles>
               <profile>
-                <id>${{ inputs.profile-id }}</id>
+                <id>${PROFILE_ID}</id>
                 <repositories>
                   <repository>
-                    <id>${{ inputs.server-id }}</id>
-                    <url>${{ inputs.repository-url }}</url>
+                    <id>${SERVER_ID}</id>
+                    <url>${REPOSITORY_URL}</url>
+                    <releases>
+                      <enabled>true</enabled>
+                    </releases>
+                    <snapshots>
+                      <enabled>true</enabled>
+                    </snapshots>
                   </repository>
                 </repositories>
-                <activation>
-                  <activeByDefault>true</activeByDefault>
-                </activation>
+                <pluginRepositories>
+                  <pluginRepository>
+                    <id>${SERVER_ID}</id>
+                    <url>${REPOSITORY_URL}</url>
+                  </pluginRepository>
+                </pluginRepositories>
               </profile>
             </profiles>
+            <activeProfiles>
+              <activeProfile>${PROFILE_ID}</activeProfile>
+            </activeProfiles>
           </settings>
           EOF
+          
+          # Replace placeholders with actual values
+          sed -i "s|\${SERVER_ID}|${{ inputs.server-id }}|g" ~/.m2/settings.xml
+          sed -i "s|\${MAVEN_USERNAME}|${{ inputs.maven-username }}|g" ~/.m2/settings.xml
+          sed -i "s|\${MAVEN_TOKEN}|${{ secrets.MAVEN_TOKEN }}|g" ~/.m2/settings.xml
+          sed -i "s|\${PROFILE_ID}|${{ inputs.profile-id }}|g" ~/.m2/settings.xml
+          sed -i "s|\${REPOSITORY_URL}|${{ inputs.repository-url }}|g" ~/.m2/settings.xml
 
       - name: Make mvnw executable
         working-directory: ${{ inputs.working-directory }}
-        run: chmod +x ./mvnw
+        run: |
+          if [ -f "./mvnw" ]; then
+            chmod +x ./mvnw
+          else
+            echo "Warning: mvnw not found, will use system Maven"
+          fi
 
       - name: Get project version
         id: get-version
         working-directory: ${{ inputs.working-directory }}
         run: |
           if [ -f "pom.xml" ]; then
-            VERSION=$(./mvnw help:evaluate -Dexpression=project.version -q -DforceStdout)
+            if [ -f "./mvnw" ]; then
+              VERSION=$(./mvnw help:evaluate -Dexpression=project.version -q -DforceStdout)
+            else
+              VERSION=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout)
+            fi
             echo "version=$VERSION" >> $GITHUB_OUTPUT
-            echo "Project version: $VERSION"
+            echo "✅ Project version: $VERSION"
           else
-            echo "Error: No pom.xml found in working directory"
+            echo "❌ Error: No pom.xml found in working directory"
             exit 1
           fi
 
       - name: Build and deploy to Maven repository
         working-directory: ${{ inputs.working-directory }}
         run: |
-          if [ "${{ inputs.skip-tests }}" = "true" ]; then
-            ./mvnw clean deploy ${{ inputs.maven-options }} -DskipTests
-          else
-            ./mvnw clean deploy ${{ inputs.maven-options }}
+          MVN_CMD="./mvnw"
+          if [ ! -f "./mvnw" ]; then
+            MVN_CMD="mvn"
           fi
+          
+          MVN_ARGS="clean deploy"
+          
+          if [ "${{ inputs.skip-tests }}" = "true" ]; then
+            MVN_ARGS="$MVN_ARGS -DskipTests"
+          fi
+          
+          if [ -n "${{ inputs.maven-options }}" ]; then
+            MVN_ARGS="$MVN_ARGS ${{ inputs.maven-options }}"
+          fi
+          
+          echo "🚀 Executing: $MVN_CMD $MVN_ARGS"
+          $MVN_CMD $MVN_ARGS
 
       - name: Summary
+        if: success()
         run: |
-          echo "## Deployment Summary :rocket:" >> $GITHUB_STEP_SUMMARY
+          echo "## ✅ Deployment Successful :rocket:" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- **Artifact Version:** ${{ steps.get-version.outputs.version }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Repository:** ${{ inputs.repository-url }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Java Version:** ${{ inputs.java-version }}" >> $GITHUB_STEP_SUMMARY
-          echo "- **Tests Skipped:** ${{ inputs.skip-tests }}" >> $GITHUB_STEP_SUMMARY
+          echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Artifact Version** | \`${{ steps.get-version.outputs.version }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Repository** | ${{ inputs.repository-url }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Server ID** | ${{ inputs.server-id }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Java Version** | ${{ inputs.java-version }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Distribution** | ${{ inputs.distribution }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Tests Skipped** | ${{ inputs.skip-tests }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Working Directory** | ${{ inputs.working-directory }} |" >> $GITHUB_STEP_SUMMARY
+
+      - name: Failure Summary
+        if: failure()
+        run: |
+          echo "## ❌ Deployment Failed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Please check the logs above for error details." >> $GITHUB_STEP_SUMMARY
