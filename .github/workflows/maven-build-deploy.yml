@@ -142,6 +142,10 @@ jobs:
           </settings>
           EOF
 
+      - name: Make mvnw executable
+        working-directory: ${{ inputs.working-directory }}
+        run: chmod +x ./mvnw
+
       - name: Get project version
         id: get-version
         working-directory: ${{ inputs.working-directory }}
@@ -154,10 +158,6 @@ jobs:
             echo "Error: No pom.xml found in working directory"
             exit 1
           fi
-
-      - name: Make mvnw executable
-        working-directory: ${{ inputs.working-directory }}
-        run: chmod +x ./mvnw
 
       - name: Build and deploy to Maven repository
         working-directory: ${{ inputs.working-directory }}
