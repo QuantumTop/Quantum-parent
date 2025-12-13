@@ -122,64 +122,55 @@ jobs:
           cache: 'maven'
 
       - name: Configure Maven settings
-        uses: whelk-io/maven-settings-xml-action@v20
-        with:
-          servers: |
-            [
-              {
-                "id": "${{ inputs.server-id }}",
-                "username": "${{ inputs.maven-username }}",
-                "password": "${{ secrets.MAVEN_TOKEN }}"
-              }
-            ]
-          repositories: |
-            [
-              {
-                "id": "${{ inputs.server-id }}",
-                "url": "${{ inputs.repository-url }}",
-                "releases": {
-                  "enabled": "true"
-                },
-                "snapshots": {
-                  "enabled": "true"
-                }
-              }
-            ]
-          plugin_repositories: |
-            [
-              {
-                "id": "${{ inputs.server-id }}",
-                "url": "${{ inputs.repository-url }}"
-              }
-            ]
-          profiles: |
-            [
-              {
-                "id": "${{ inputs.profile-id }}",
-                "repositories": [
-                  {
-                    "id": "${{ inputs.server-id }}",
-                    "url": "${{ inputs.repository-url }}",
-                    "releases": {
-                      "enabled": "true"
-                    },
-                    "snapshots": {
-                      "enabled": "true"
-                    }
-                  }
-                ],
-                "plugin_repositories": [
-                  {
-                    "id": "${{ inputs.server-id }}",
-                    "url": "${{ inputs.repository-url }}"
-                  }
-                ]
-              }
-            ]
-          active_profiles: |
-            [
-              "${{ inputs.profile-id }}"
-            ]
+        run: |
+          mkdir -p ~/.m2
+          cat > ~/.m2/settings.xml << 'EOF'
+          <settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"
+                    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+                    xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.0.0
+                                        http://maven.apache.org/xsd/settings-1.0.0.xsd">
+            <servers>
+              <server>
+                <id>${SERVER_ID}</id>
+                <username>${MAVEN_USERNAME}</username>
+                <password>${MAVEN_TOKEN}</password>
+              </server>
+            </servers>
+            <profiles>
+              <profile>
+                <id>${PROFILE_ID}</id>
+                <repositories>
+                  <repository>
+                    <id>${SERVER_ID}</id>
+                    <url>${REPOSITORY_URL}</url>
+                    <releases>
+                      <enabled>true</enabled>
+                    </releases>
+                    <snapshots>
+                      <enabled>true</enabled>
+                    </snapshots>
+                  </repository>
+                </repositories>
+                <pluginRepositories>
+                  <pluginRepository>
+                    <id>${SERVER_ID}</id>
+                    <url>${REPOSITORY_URL}</url>
+                  </pluginRepository>
+                </pluginRepositories>
+              </profile>
+            </profiles>
+            <activeProfiles>
+              <activeProfile>${PROFILE_ID}</activeProfile>
+            </activeProfiles>
+          </settings>
+          EOF
+          
+          # Replace placeholders with actual values
+          sed -i "s|\${SERVER_ID}|${{ inputs.server-id }}|g" ~/.m2/settings.xml
+          sed -i "s|\${MAVEN_USERNAME}|${{ inputs.maven-username }}|g" ~/.m2/settings.xml
+          sed -i "s|\${MAVEN_TOKEN}|${{ secrets.MAVEN_TOKEN }}|g" ~/.m2/settings.xml
+          sed -i "s|\${PROFILE_ID}|${{ inputs.profile-id }}|g" ~/.m2/settings.xml
+          sed -i "s|\${REPOSITORY_URL}|${{ inputs.repository-url }}|g" ~/.m2/settings.xml
 
       - name: Make mvnw executable
         working-directory: ${{ inputs.working-directory }}
