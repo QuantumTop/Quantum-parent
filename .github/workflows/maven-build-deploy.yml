@@ -95,6 +95,11 @@ on:
         required: false
         default: 'cnb'
         type: string
+      repository-path:
+        description: 'Maven repository username'
+        required: false
+        default: 'QuantumTop/quantum-parent'
+        type: string
     secrets:
       MAVEN_TOKEN:
         description: 'Maven repository authentication token'
@@ -114,7 +119,7 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          repository: QuantumTop/quantum-parent   # 👈 显式指定
+          repository: ${{ inputs.repository-path }}   # 👈 显式指定
           ref: ${{ github.ref }}
 
       - name: Set up JDK ${{ inputs.java-version }}
