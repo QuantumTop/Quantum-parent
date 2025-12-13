@@ -138,6 +138,16 @@ jobs:
           repositories: |
             [
               {
+                "id": "central",
+                "url": "https://repo.maven.apache.org/maven2",
+                "releases": {
+                  "enabled": "true"
+                },
+                "snapshots": {
+                  "enabled": "false"
+                }
+              },
+              {
                 "id": "${{ inputs.server-id }}",
                 "url": "${{ inputs.repository-url }}",
                 "releases": {
@@ -150,6 +160,10 @@ jobs:
             ]
           plugin_repositories: |
             [
+              {
+                "id": "central",
+                "url": "https://repo.maven.apache.org/maven2"
+              },
               {
                 "id": "${{ inputs.server-id }}",
                 "url": "${{ inputs.repository-url }}"
