@@ -267,7 +267,7 @@ jobs:
       - name: Update built modules list
         id: update-built-modules
         run: |
-          MODULE_NAME="quantum-parent"
+          MODULE_NAME="${{inputs.repository-module}}"
           BUILT_MODULES="${{ inputs.built-modules }}"
           
           if [ "${{ steps.check-if-built.outputs.skipped }}" == "false" ]; then
