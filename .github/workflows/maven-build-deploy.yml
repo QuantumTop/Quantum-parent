@@ -137,7 +137,7 @@ jobs:
       - name: Check if module already built
         id: check-if-built
         run: |
-          MODULE_NAME="quantum-parent"
+          MODULE_NAME="${{inputs.repository-module}}"
           BUILT_MODULES="${{ inputs.built-modules }}"
           
           if [[ ",$BUILT_MODULES," == *",$MODULE_NAME,"* ]]; then
