@@ -1,0 +1,255 @@
+name: 'Maven Build and Deploy - Parent'
+
+on:
+  workflow_dispatch:
+    inputs:
+      java-version:
+        description: 'Java version to use'
+        required: false
+        default: '25'
+        type: string
+      distribution:
+        description: 'Java distribution to use'
+        required: false
+        default: 'temurin'
+        type: string
+      maven-options:
+        description: 'Additional Maven options'
+        required: false
+        default: ''
+        type: string
+      working-directory:
+        description: 'Working directory for the Maven project'
+        required: false
+        default: '.'
+        type: string
+      skip-tests:
+        description: 'Skip running tests'
+        required: false
+        default: true
+        type: boolean
+      maven-username:
+        description: 'Maven repository username'
+        required: false
+        default: 'cnb'
+        type: string
+      server-id:
+        description: 'Maven server ID for repository'
+        required: false
+        default: 'lunarstra-quantum'
+        type: string
+      repository-url:
+        description: 'Repository URL'
+        required: false
+        default: 'https://maven.cnb.cool/lunarstra/Quantum/-/packages/'
+        type: string
+      profile-id:
+        description: 'Maven profile ID for repository'
+        required: false
+        default: 'lunarstra-quantum'
+        type: string
+      repository-module:
+        description: 'Maven repository path'
+        required: false
+        default: 'QuantumTop/quantum-parent'
+        type: string
+  workflow_call:
+    inputs:
+      java-version:
+        description: 'Java version to use'
+        required: false
+        default: '25'
+        type: string
+      distribution:
+        description: 'Java distribution to use'
+        required: false
+        default: 'temurin'
+        type: string
+      maven-options:
+        description: 'Additional Maven options'
+        required: false
+        default: ''
+        type: string
+      working-directory:
+        description: 'Working directory for the Maven project'
+        required: false
+        default: '.'
+        type: string
+      server-id:
+        description: 'Maven server ID for repository'
+        required: false
+        default: 'lunarstra-quantum'
+        type: string
+      repository-url:
+        description: 'Repository URL'
+        required: false
+        default: 'https://maven.cnb.cool/lunarstra/Quantum/-/packages/'
+        type: string
+      profile-id:
+        description: 'Maven profile ID for repository'
+        required: false
+        default: 'lunarstra-quantum'
+        type: string
+      skip-tests:
+        description: 'Skip running tests'
+        required: false
+        default: true
+        type: boolean
+      maven-username:
+        description: 'Maven repository username'
+        required: false
+        default: 'cnb'
+        type: string
+      repository-module:
+        description: 'Maven repository path'
+        required: false
+        default: 'QuantumTop/quantum-parent'
+        type: string
+    secrets:
+      MAVEN_TOKEN:
+        description: 'Maven repository authentication token'
+        required: true
+    outputs:
+      artifact-version:
+        description: 'Version of the deployed artifact'
+        value: ${{ jobs.quantum-parent-deploy.outputs.version }}
+
+jobs:
+  quantum-parent-deploy:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.get-version.outputs.version }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ inputs.repository-module }}
+          ref: ${{ github.ref }}
+
+      - name: Set up JDK ${{ inputs.java-version }}
+        uses: actions/setup-java@v4
+        with:
+          java-version: ${{ inputs.java-version }}
+          distribution: ${{ inputs.distribution }}
+          cache: 'maven'
+
+      - name: Configure Maven settings
+        uses: whelk-io/maven-settings-xml-action@v22
+        with:
+          servers: |
+            [
+              {
+                "id": "${{ inputs.server-id }}",
+                "username": "${{ inputs.maven-username }}",
+                "password": "${{ secrets.MAVEN_TOKEN }}"
+              }
+            ]
+          repositories: |
+            [
+              {
+                "id": "central",
+                "url": "https://repo.maven.apache.org/maven2",
+                "releases": {
+                  "enabled": "true"
+                },
+                "snapshots": {
+                  "enabled": "false"
+                }
+              },
+              {
+                "id": "${{ inputs.server-id }}",
+                "url": "${{ inputs.repository-url }}",
+                "releases": {
+                  "enabled": "true"
+                },
+                "snapshots": {
+                  "enabled": "true"
+                }
+              }
+            ]
+          plugin_repositories: |
+            [
+              {
+                "id": "central",
+                "url": "https://repo.maven.apache.org/maven2"
+              },
+              {
+                "id": "${{ inputs.server-id }}",
+                "url": "${{ inputs.repository-url }}"
+              }
+            ]
+          active_profiles: |
+            [
+              "${{ inputs.profile-id }}"
+            ]
+
+      - name: Make mvnw executable
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          if [ -f "./mvnw" ]; then
+            chmod +x ./mvnw
+          else
+            echo "Warning: mvnw not found, will use system Maven"
+          fi
+
+      - name: Get project version
+        id: get-version
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          if [ -f "pom.xml" ]; then
+            if [ -f "./mvnw" ]; then
+              VERSION=$(./mvnw help:evaluate -Dexpression=project.version -q -DforceStdout -N)
+            else
+              VERSION=$(mvn help:evaluate -Dexpression=project.version -q -DforceStdout -N)
+            fi
+            echo "version=$VERSION" >> $GITHUB_OUTPUT
+            echo "✅ Project version: $VERSION"
+          else
+            echo "❌ Error: No pom.xml found in working directory"
+            exit 1
+          fi
+
+      - name: Build and deploy to Maven repository
+        working-directory: ${{ inputs.working-directory }}
+        run: |
+          MVN_CMD="./mvnw"
+          if [ ! -f "./mvnw" ]; then
+            MVN_CMD="mvn"
+          fi
+          
+          MVN_ARGS="clean deploy"
+          
+          if [ "${{ inputs.skip-tests }}" = "true" ]; then
+            MVN_ARGS="$MVN_ARGS -DskipTests"
+          fi
+          
+          if [ -n "${{ inputs.maven-options }}" ]; then
+            MVN_ARGS="$MVN_ARGS ${{ inputs.maven-options }}"
+          fi
+          
+          echo "🚀 Executing: $MVN_CMD $MVN_ARGS"
+          $MVN_CMD $MVN_ARGS
+
+      - name: Summary
+        if: success()
+        run: |
+          echo "## ✅ Deployment Successful :rocket:" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
+          echo "|----------|-------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **Component** | **quantum-parent** |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Artifact Version** | \`${{ steps.get-version.outputs.version }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Repository** | ${{ inputs.repository-url }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Server ID** | ${{ inputs.server-id }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Java Version** | ${{ inputs.java-version }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Distribution** | ${{ inputs.distribution }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Tests Skipped** | ${{ inputs.skip-tests }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| **Working Directory** | ${{ inputs.working-directory }} |" >> $GITHUB_STEP_SUMMARY
+
+      - name: Failure Summary
+        if: failure()
+        run: |
+          echo "## ❌ Deployment Failed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Please check the logs above for error details." >> $GITHUB_STEP_SUMMARY
